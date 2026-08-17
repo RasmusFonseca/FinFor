@@ -1,0 +1,10 @@
+yfinance
+arch
+pandas
+numpy
+scikit-learn
+streamlit
+requests
+tqdm
+plotly
+pyarrow
