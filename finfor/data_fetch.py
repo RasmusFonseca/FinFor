@@ -35,6 +35,33 @@ def _batched(seq: list[str], size: int):
         yield seq[i : i + size]
 
 
+def _download_batch(batch: list[str], verbose: bool = True, **download_kwargs) -> dict[str, pd.DataFrame]:
+    """yf.download() one batch and split it into a per-symbol frame.
+
+    With group_by="ticker" and a list input, yfinance always returns
+    MultiIndex columns keyed by symbol -- including for a batch of exactly
+    one symbol, which is easy to get wrong by assuming a single-symbol batch
+    comes back with flat columns. Symbols missing/unparseable in the result
+    are silently omitted from the returned dict rather than raising.
+    """
+    try:
+        df = yf.download(batch, group_by="ticker", threads=True, progress=False, **download_kwargs)
+    except Exception as e:  # noqa: BLE001
+        if verbose:
+            print(f"  batch failed: {e}")
+        return {}
+
+    out = {}
+    for sym in batch:
+        try:
+            out[sym] = df[sym]
+        except (KeyError, TypeError):
+            if verbose:
+                print(f"  {sym}: missing from batch response")
+            continue
+    return out
+
+
 def screen_liquidity(
     universe: pd.DataFrame,
     lookback: str = "1mo",
@@ -50,21 +77,9 @@ def screen_liquidity(
     for i, batch in enumerate(_batched(symbols, batch_size)):
         if verbose:
             print(f"[screen] batch {i + 1}/{-(-len(symbols)//batch_size)} ({len(batch)} symbols)")
-        try:
-            df = yf.download(
-                batch, period=lookback, interval="1d", group_by="ticker",
-                threads=True, progress=False, auto_adjust=True,
-            )
-        except Exception as e:  # noqa: BLE001
-            if verbose:
-                print(f"  batch failed: {e}")
-            continue
+        frames = _download_batch(batch, verbose=verbose, period=lookback, interval="1d", auto_adjust=True)
 
-        for sym in batch:
-            try:
-                sub = df[sym] if len(batch) > 1 else df
-            except (KeyError, TypeError):
-                continue
+        for sym, sub in frames.items():
             sub = sub.dropna(subset=["Close", "Volume"])
             if sub.empty or len(sub) < 5:
                 continue
@@ -114,21 +129,9 @@ def refresh_history(
     for i, batch in enumerate(_batched(to_fetch, batch_size)):
         if verbose:
             print(f"[history] batch {i + 1}/{-(-len(to_fetch)//batch_size)} ({len(batch)} symbols)")
-        try:
-            df = yf.download(
-                batch, period=period, interval=interval, group_by="ticker",
-                threads=True, progress=False, auto_adjust=True,
-            )
-        except Exception as e:  # noqa: BLE001
-            if verbose:
-                print(f"  batch failed: {e}")
-            continue
+        frames = _download_batch(batch, verbose=verbose, period=period, interval=interval, auto_adjust=True)
 
-        for sym in batch:
-            try:
-                sub = df[sym] if len(batch) > 1 else df
-            except (KeyError, TypeError):
-                continue
+        for sym, sub in frames.items():
             sub = sub.dropna(subset=["Close"])
             if sub.empty or len(sub) < 60:
                 continue

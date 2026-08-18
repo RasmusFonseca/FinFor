@@ -28,7 +28,6 @@ class GarchForecast:
     weekly_move_pct: float  # sqrt-time-scaled expected magnitude of move over horizon, as a fraction
     annualized_vol: float
     persistence: float  # alpha + beta: how long vol shocks persist (near 1 = "reliable"/sticky regime)
-    converged: bool
 
 
 def fit_garch(
@@ -49,10 +48,11 @@ def fit_garch(
     except Exception:
         return None
 
-    if not res.convergence_flag == 0:
-        converged = False
-    else:
-        converged = True
+    # A non-converged fit isn't trustworthy — treat it the same as "couldn't
+    # fit" here, at the source, so every caller gets this guarantee for free
+    # instead of each needing to remember to check a `converged` flag.
+    if res.convergence_flag != 0:
+        return None
 
     try:
         fcast = res.forecast(horizon=horizon_days, reindex=False)
@@ -75,5 +75,4 @@ def fit_garch(
         weekly_move_pct=weekly_move_pct,
         annualized_vol=annualized_vol,
         persistence=persistence,
-        converged=converged,
     )

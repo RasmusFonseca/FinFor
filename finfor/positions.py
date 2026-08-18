@@ -31,6 +31,8 @@ def load_positions() -> pd.DataFrame:
             if col not in df.columns:
                 df[col] = None
         df["last_updated"] = pd.to_datetime(df["last_updated"], errors="coerce")
+        df["shares"] = pd.to_numeric(df["shares"], errors="coerce")
+        df["cost_basis"] = pd.to_numeric(df["cost_basis"], errors="coerce")
         return df[POSITIONS_COLUMNS]
     return pd.DataFrame(columns=POSITIONS_COLUMNS)
 
@@ -60,12 +62,21 @@ def apply_proposals(funded: pd.DataFrame, today: dt.date | None = None) -> pd.Da
     `funded` must have symbol, last_close, allocation_dollars. Shares are
     sized to the dollar allocation at the current price — Robinhood supports
     fractional shares, so this isn't rounded to whole shares.
+
+    Rows with no real dollar amount to deploy (e.g. capital was set to 0) or
+    no usable price (missing/zero/NaN last_close) are dropped rather than
+    written as phantom 0-share or inf/NaN-share rows — a "funded" position
+    with nothing actually behind it isn't a position.
     """
     today = today or dt.date.today()
+    usable = funded[
+        pd.to_numeric(funded["allocation_dollars"], errors="coerce").gt(0)
+        & pd.to_numeric(funded["last_close"], errors="coerce").gt(0)
+    ]
     out = pd.DataFrame({
-        "symbol": funded["symbol"],
-        "shares": (funded["allocation_dollars"] / funded["last_close"]).round(4),
-        "cost_basis": funded["last_close"].round(2),
+        "symbol": usable["symbol"],
+        "shares": (usable["allocation_dollars"] / usable["last_close"]).round(4),
+        "cost_basis": usable["last_close"].round(2),
         "last_updated": today.isoformat(),
     })
     return out.reset_index(drop=True)

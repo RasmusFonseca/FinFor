@@ -26,12 +26,10 @@ def shortlist_candidates(
     features_by_symbol: dict[str, pd.DataFrame],
     top_n: int = 150,
     min_annualized_vol: float = ANNUALIZED_VOL_FLOOR,
-    lookback_days: int = 20,
 ) -> pd.DataFrame:
     rows = []
     for sym, feat in features_by_symbol.items():
-        recent = feat.tail(lookback_days)
-        if recent.empty:
+        if feat.empty:
             continue
         last = feat.iloc[-1]
         vol_level = last.get("realized_vol_20d", np.nan)

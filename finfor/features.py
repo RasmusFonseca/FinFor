@@ -44,6 +44,10 @@ def _rsi(close: pd.Series, window: int = 14) -> pd.Series:
     avg_loss = loss.ewm(alpha=1 / window, min_periods=window, adjust=False).mean()
     rs = avg_gain / avg_loss.replace(0, np.nan)
     rsi = 100 - (100 / (1 + rs))
+    # avg_loss == 0 makes `rs` NaN, which is not "insufficient data" — it's a
+    # window with no down days at all, i.e. RSI is mathematically 100 (or 50
+    # if avg_gain is also 0, meaning the price didn't move at all).
+    rsi = rsi.where(avg_loss != 0, np.where(avg_gain > 0, 100.0, 50.0))
     return rsi.fillna(50)
 
 

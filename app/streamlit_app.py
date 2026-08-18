@@ -34,6 +34,18 @@ def latest_proposals() -> pd.DataFrame | None:
     return pd.read_csv(files[-1]), files[-1].stem.replace("proposals_", "")
 
 
+def _normalize_result_dtypes(df: pd.DataFrame) -> pd.DataFrame:
+    """Coerce columns that round-trip messily through CSV (or arrive as raw
+    dt.date/NaT objects straight from a fresh pipeline run) to clean dtypes,
+    once, regardless of which view ends up reading them."""
+    if "hold_until" in df.columns:
+        df["hold_until"] = pd.to_datetime(df["hold_until"], errors="coerce")
+    for col in ("target_sell_price", "stop_loss_price"):
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+    return df
+
+
 def price_chart(symbol: str) -> go.Figure | None:
     hist = load_history(symbol)
     if hist is None:
@@ -84,6 +96,8 @@ if result is None:
     if cached is not None:
         result, run_date = cached
         st.info(f"Showing cached proposals from {run_date}. Click 'Run pipeline now' to refresh.")
+if result is not None and not result.empty:
+    result = _normalize_result_dtypes(result)
 
 n_actionable = 0
 if result is not None and not result.empty and "action" in result.columns:
@@ -103,7 +117,9 @@ with st.sidebar:
     capital = st.number_input("Capital to deploy this round ($)", min_value=0.0, value=200.0, step=25.0)
     st.caption(
         "Splits the amount above across the top buy-rated names, weighted by "
-        "reliability × confidence, capped at 40% in any single name."
+        "reliability × confidence. Capped at 40% in any single name once you're "
+        "funding 3+ positions — with fewer, the cap relaxes (e.g. 100% for 1, "
+        "50/50 for 2) since funding fewer names is itself a concentration choice."
     )
 
 VIEWS = [
@@ -138,12 +154,11 @@ if active_view == VIEWS[0]:
     else:
         display = allocate(result, n_positions=n_positions)
         display["allocation_dollars"] = (display["suggested_allocation_pct"] / 100 * capital).round(2)
-        display["hold_until"] = pd.to_datetime(display["hold_until"], errors="coerce")
-        display["target_sell_price"] = pd.to_numeric(display["target_sell_price"], errors="coerce")
-        display["stop_loss_price"] = pd.to_numeric(display["stop_loss_price"], errors="coerce")
 
-        funded = display[display["suggested_allocation_pct"] > 0]
-        if not funded.empty:
+        funded = display[(display["suggested_allocation_pct"] > 0) & (display["allocation_dollars"] > 0)]
+        if capital <= 0:
+            st.warning("Capital to deploy is $0 — nothing will be funded. Set it above to size positions.")
+        elif not funded.empty:
             st.metric("Positions funded", f"{len(funded)} of {n_positions} requested")
             st.caption(
                 "Allocation only applies to buy-rated names — skip/short rows are informational. "

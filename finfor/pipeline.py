@@ -26,11 +26,18 @@ from finfor.models.score import shortlist_candidates
 from finfor.models.garch import fit_garch
 from finfor.models.meanrev import direction_signal, direction_confidence
 from finfor.backtest import walk_forward_backtest
-from finfor.models.recommend import add_recommendations
+from finfor.models.recommend import add_recommendations, RELIABILITY_SKIP
 
 PROPOSALS_DIR = DATA_DIR / "proposals"
 
-MIN_RELIABILITY_SCORE = 0.15
+# Deliberately more permissive than recommend.RELIABILITY_SKIP: a candidate
+# between this floor and RELIABILITY_SKIP still makes it into the proposals
+# table, just labeled "Skip (signal too weak)" by recommend.py, instead of
+# disappearing from the output entirely. Derived from RELIABILITY_SKIP
+# (rather than an independent constant) so the two can't silently drift
+# apart — raising the bar for "actionable" automatically raises the bar for
+# "worth showing at all".
+MIN_RELIABILITY_SCORE = RELIABILITY_SKIP / 2
 TARGET_WEEKLY_MOVE_MIN = 0.02
 TARGET_WEEKLY_MOVE_MAX = 0.10
 
